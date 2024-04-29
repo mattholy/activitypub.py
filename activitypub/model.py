@@ -1,6 +1,5 @@
 import mimetypes
 import isodate
-from babel.core import Locale, UnknownLocaleError
 import pycountry
 
 from pydantic import BaseModel, Field, HttpUrl
