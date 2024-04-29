@@ -9,6 +9,12 @@ from datetime import datetime
 from typing import Optional, Union, List, Dict, Any, Literal
 
 
+# ActivityPub Type
+mimetypes.add_type(
+    'application/ld+json; profile="https://www.w3.org/ns/activitystreams"', '.json')
+mimetypes.add_type('application/activity+json', '.json')
+
+
 class ActivityStreamsBase(BaseModel):
     activitypub_context: Optional[
         Union[HttpUrl, List[Union[HttpUrl, Dict[str, Any]]]]
@@ -89,9 +95,6 @@ class BaseObject(ActivityStreamsBase):
 
     @field_validator('media_type')
     def check_media_type(cls, value):
-        mimetypes.add_type(
-            'application/ld+json; profile="https://www.w3.org/ns/activitystreams"', '.json')
-        mimetypes.add_type('application/activity+json', '.json')
         extension = mimetypes.guess_extension(value)
         if not extension:
             raise ValueError(f"Invalid MIME type: {value}")
@@ -187,13 +190,18 @@ class BaseActivity(BaseObject):
         'Remove', 'TentativeReject', 'TentativeAccept', 'Travel', 'Undo',
         'Update', 'View'
     ] = Field(None, alias='type')
-    actor: Union[HttpUrl, 'Actor'] = Field(None, alias='actor')
-    object: Optional[Union[HttpUrl, BaseObject]] = Field(None, alias='object')
-    target: Optional[Union[HttpUrl, BaseObject]] = Field(None, alias='target')
-    result: Optional[Union[HttpUrl, BaseObject]] = Field(None, alias='result')
-    origin: Optional[Union[HttpUrl, BaseObject]] = Field(None, alias='origin')
-    instrument: Optional[Union[HttpUrl, BaseObject]
-                         ] = Field(None, alias='instrument')
+    actor: Optional[Union[HttpUrl, 'Actor', 'BaseLink',
+                          List[Union[HttpUrl, 'Actor', 'BaseLink']]]] = Field(None, alias='actor')
+    object: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                           List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='object')
+    target: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                           List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='target')
+    result: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                           List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='result')
+    origin: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                           List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='origin')
+    instrument: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                               List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='instrument')
 
 
 class IntransitiveActivity(BaseActivity):
@@ -202,13 +210,17 @@ class IntransitiveActivity(BaseActivity):
 
 class BaseCollection(BaseObject):
     type: str = 'Collection'
-    total_items: Optional[int] = Field(None, alias='totalItems')
-    current: Optional[Union[HttpUrl, BaseObject]
-                      ] = Field(None, alias='current')
-    first: Optional[Union[HttpUrl, BaseObject]] = Field(None, alias='first')
-    last: Optional[Union[HttpUrl, BaseObject]] = Field(None, alias='last')
-    items: Optional[List[Union[HttpUrl, BaseObject]]
-                    ] = Field(None, alias='items')
+    total_items: Optional[int] = Field(None, alias='totalItems', ge=0)
+    current: Optional[Union[HttpUrl, 'CollectionPage', 'BaseLink',
+                            List[Union[HttpUrl, 'CollectionPage', 'BaseLink']]]] = Field(None, alias='current')
+    first: Optional[Union[HttpUrl, 'CollectionPage', 'BaseLink',
+                          List[Union[HttpUrl, 'CollectionPage', 'BaseLink']]]] = Field(None, alias='first')
+    last: Optional[Union[HttpUrl, 'CollectionPage', 'BaseLink',
+                         List[Union[HttpUrl, 'CollectionPage', 'BaseLink']]]] = Field(None, alias='last')
+    items: Optional[Union[List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(
+        None, alias='items')
+    ordered_items: Optional[Union[List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(
+        None, alias='orderedItems')
 
 
 class OrderedCollection(BaseCollection):
@@ -216,6 +228,7 @@ class OrderedCollection(BaseCollection):
 
 
 class CollectionPage(BaseCollection):
+    type: str = 'CollectionPage'
     part_of: Optional[Union[HttpUrl, BaseCollection]
                       ] = Field(None, alias='partOf')
     next: Optional[Union[HttpUrl, BaseCollection]] = Field(None, alias='next')
@@ -224,6 +237,7 @@ class CollectionPage(BaseCollection):
 
 class OrderedCollectionPage(CollectionPage):
     type: str = 'OrderedCollectionPage'
+    start_index: Optional[int] = Field(None, alias='startIndex', ge=0)
 
 
 class Actor(ActivityStreamsBase):
@@ -325,9 +339,12 @@ class InviteActivity(OfferActivity):
 
 class QuestionActivity(IntransitiveActivity):
     type: str = Field('Question')
-    one_of: Optional[List[BaseObject]] = Field(None, alias='oneOf')
-    any_of: Optional[List[BaseObject]] = Field(None, alias='anyOf')
-    closed: Optional[datetime] = Field(None, alias='closed')
+    one_of: Optional[Union[List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(
+        None, alias='oneOf')
+    any_of: Optional[Union[List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(
+        None, alias='anyOf')
+    closed: Optional[Union[datetime, bool, BaseObject,
+                           BaseLink, HttpUrl]] = Field(None, alias='closed')
 
 
 class RejectActivity(BaseActivity):
@@ -448,6 +465,13 @@ class TombstoneObject(BaseObject):
     type: str = Field('Tombstone')
     former_type: str = Field(None, alias='formerType')
     deleted: datetime = Field(None, alias='deleted')
+
+    @field_validator('former_type')
+    def check_media_type(cls, value):
+        extension = mimetypes.guess_extension(value)
+        if not extension:
+            raise ValueError(f"Invalid MIME type: {value}")
+        return value
 
 
 class VideoObject(DocumentObject):
