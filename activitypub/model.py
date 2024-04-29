@@ -9,6 +9,7 @@ from typing import Optional, Union, List, Dict, Any, Literal
 
 
 # ActivityPub Type
+
 mimetypes.add_type(
     'application/ld+json; profile="https://www.w3.org/ns/activitystreams"', '.json')
 mimetypes.add_type('application/activity+json', '.json')
@@ -27,7 +28,16 @@ def validate_language_codes(code: str):
 class ActivityStreamsBase(BaseModel):
     activitypub_context: Optional[
         Union[HttpUrl, List[Union[HttpUrl, Dict[str, Any]]]]
-    ] = Field(None, alias='@context')
+    ] = Field([
+        "https://www.w3.org/ns/activitystreams",
+        "https://w3id.org/security/v1",
+        {
+            "schema": "http://schema.org#",
+            "toot": "http://joinmastodon.org/ns#",
+            "misskey": "https://misskey-hub.net/ns#",
+            "mossy": "https://hub.mossy.social/ns#",
+        }
+    ], alias='@context')
     id: Optional[HttpUrl] = Field(None, alias='id')
     type: Optional[str] = Field(None, alias='type')
 
@@ -173,8 +183,8 @@ class BaseActivity(BaseObject):
         'Remove', 'TentativeReject', 'TentativeAccept', 'Travel', 'Undo',
         'Update', 'View'
     ] = Field(None, alias='type')
-    actor: Optional[Union[HttpUrl, 'Actor', 'BaseLink',
-                          List[Union[HttpUrl, 'Actor', 'BaseLink']]]] = Field(None, alias='actor')
+    actor: Optional[Union[HttpUrl, 'BaseActor', 'BaseLink',
+                          List[Union[HttpUrl, 'BaseActor', 'BaseLink']]]] = Field(None, alias='actor')
     object: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
                            List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='object')
     target: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
@@ -223,10 +233,26 @@ class OrderedCollectionPage(CollectionPage):
     start_index: Optional[int] = Field(None, alias='startIndex', ge=0)
 
 
-class Actor(ActivityStreamsBase):
+class BaseActor(ActivityStreamsBase):
+    activitypub_context: Optional[
+        Union[HttpUrl, List[Union[HttpUrl, Dict[str, Any]]]]
+    ] = Field([
+        "https://www.w3.org/ns/activitystreams",
+        "https://w3id.org/security/v1",
+        {
+            "schema": "http://schema.org#",
+            "toot": "http://joinmastodon.org/ns#",
+            "misskey": "https://misskey-hub.net/ns#",
+            "mossy": "https://hub.mossy.social/ns#",
+            "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+            "Hashtag": "as:Hashtag",
+            "PropertyValue": "schema:PropertyValue",
+            "value": "schema:value",
+        }
+    ], alias='@context')
     type: str = Field(None, alias='type')
-    inbox: HttpUrl = Field(None, alias='inbox')
-    outbox: HttpUrl = Field(None, alias='outbox')
+    inbox: Union[HttpUrl, OrderedCollection] = Field(None, alias='inbox')
+    outbox: Union[HttpUrl, OrderedCollection] = Field(None, alias='outbox')
     following: Optional[HttpUrl] = Field(None, alias='following')
     followers: Optional[HttpUrl] = Field(None, alias='followers')
     liked: Optional[HttpUrl] = Field(None, alias='liked')
@@ -242,6 +268,22 @@ class Actor(ActivityStreamsBase):
         None, alias='provideClientKey')
     sign_client_key: Optional[HttpUrl] = Field(None, alias='signClientKey')
     shared_inbox: Optional[HttpUrl] = Field(None, alias='sharedInbox')
+    public_key: Optional[Union[HttpUrl, 'PublicKey']
+                         ] = Field(None, alias='publicKey')
+    manually_approves_followers: bool = Field(
+        alias='manuallyApprovesFollowers')
+    discoverable: bool = Field(alias='discoverable')
+    name: str = Field(alias='name')
+    summary: Optional[str] = Field(None, alias='summary')
+    icon: Optional[Union[HttpUrl, 'ImageObject',
+                         'BaseLink']] = Field(None, alias='icon')
+    published: Optional[datetime] = Field(None, alias='published')
+    tag: Optional[List['HashTag']] = Field(None, alias='tag')
+    attachment: Optional[Union[HttpUrl, 'BaseObject',
+                               'PropertyValue']] = Field(None, alias='attachment')
+    image: Optional[Union[HttpUrl, 'ImageObject',
+                          'BaseLink']] = Field(None, alias='image')
+
 
 # =================================================================================================
 # Activity Types
@@ -370,23 +412,23 @@ class ViewActivity(BaseActivity):
 # =================================================================================================
 
 
-class ApplicationActor(Actor):
+class ApplicationActor(BaseActor):
     type: str = Field('Application')
 
 
-class GroupActor(Actor):
+class GroupActor(BaseActor):
     type: str = Field('Group')
 
 
-class OrganizationActor(Actor):
+class OrganizationActor(BaseActor):
     type: str = Field('Organization')
 
 
-class PersonActor(Actor):
+class PersonActor(BaseActor):
     type: str = Field('Person')
 
 
-class ServiceActor(Actor):
+class ServiceActor(BaseActor):
     type: str = Field('Service')
 
 # =================================================================================================
@@ -467,3 +509,33 @@ class VideoObject(DocumentObject):
 
 class MentionLink(BaseLink):
     type: str = Field('Mention')
+
+# =================================================================================================
+# Other Models
+# =================================================================================================
+
+
+class PublicKey(BaseModel):
+    id: HttpUrl
+    type: str = 'Key'
+    owner: Union[HttpUrl, 'BaseActor'] = Field(alias='owner')
+    public_key_pem: str = Field(alias='publicKeyPem')
+
+
+class PropertyValue(BaseModel):
+    type: str = 'PropertyValue'
+    name: str
+    value: str
+
+
+class IdentityProof(BaseModel):
+    type: str = 'IdentityProof'
+    name: str
+    signature_lgorithm: str = Field(alias='signatureAlgorithm')
+    signature_value: str = Field(alias='signatureValue')
+
+
+class HashTag(BaseModel):
+    type: str = 'Hashtag'
+    href: HttpUrl
+    name: str
