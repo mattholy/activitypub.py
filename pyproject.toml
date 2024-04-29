@@ -11,6 +11,8 @@ packages = [{include = "activitypub"}]
 python = "^3.12"
 pydantic = "^2.7.0"
 requests = "^2.31.0"
+babel = "^2.14.0"
+pycountry = "^23.12.11"
 
 
 [tool.poetry.group.dev.dependencies]

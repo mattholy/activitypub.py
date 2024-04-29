@@ -1,3 +1,8 @@
+import mimetypes
+import isodate
+from babel.core import Locale, UnknownLocaleError
+import pycountry
+
 from pydantic import BaseModel, Field, HttpUrl
 from pydantic import field_validator
 from datetime import datetime
@@ -36,39 +41,102 @@ class ActivityStreamsBase(BaseModel):
 class BaseObject(ActivityStreamsBase):
     type: str = Field(None, alias='type')
 
-    attachment: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = Field(
-        None, alias='attachment'
-    )
-    attributed_to: Optional[Union[str, List[str]]
-                            ] = Field(None, alias='attributedTo')
-    audience: Optional[Union[str, List[str]]] = Field(None, alias='audience')
+    attachment: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                               List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='attachment')
+    attributed_to: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                                  List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='attributedTo')
+    audience: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                             List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='audience')
     content: Optional[str] = Field(None, alias='content')
-    context: Optional[Union[str, Dict[str, Any]]
-                      ] = Field(None, alias='context')
+    content_map: Optional[Dict[str, str]] = Field(None, alias='contentMap')
+    context: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                            List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='context')
     name: Optional[str] = Field(None, alias='name')
+    name_map: Optional[Dict[str, str]] = Field(None, alias='nameMap')
     end_time: Optional[datetime] = Field(None, alias='endTime')
-    generator: Optional[str] = Field(None, alias='generator')
-    icon: Optional[Union[str, Dict[str, Any]]] = Field(None, alias='icon')
-    image: Optional[Union[str, Dict[str, Any]]] = Field(None, alias='image')
-    in_reply_to: Optional[str] = Field(None, alias='inReplyTo')
-    location: Optional[Union[str, Dict[str, Any]]
-                       ] = Field(None, alias='location')
-    preview: Optional[Union[str, Dict[str, Any]]
-                      ] = Field(None, alias='preview')
+    generator: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                              List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='generator')
+    icon: Optional[Union[HttpUrl, 'ImageObject', 'BaseLink',
+                         List[Union[HttpUrl, 'ImageObject', 'BaseLink']]]] = Field(None, alias='icon')
+    image: Optional[Union['ImageObject', List['ImageObject']]
+                    ] = Field(None, alias='image')
+    in_reply_to: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                                List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='inReplyTo')
+    location: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                             List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='location')
+    preview: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                            List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='preview')
     published: Optional[datetime] = Field(None, alias='published')
-    replies: Optional[Union[str, Dict[str, Any]]
-                      ] = Field(None, alias='replies')
+    replies: Optional['BaseCollection'] = Field(None, alias='replies')
     start_time: Optional[datetime] = Field(None, alias='startTime')
     summary: Optional[str] = Field(None, alias='summary')
-    tag: Optional[Union[str, List[str]]] = Field(None, alias='tag')
+    summary_map: Optional[Dict[str, str]] = Field(None, alias='summaryMap')
+    tag: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                        List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='tag')
     updated: Optional[datetime] = Field(None, alias='updated')
-    url: Optional[str] = Field(None, alias='url')
-    to: Optional[Union[str, List[str]]] = Field(None, alias='to')
-    bto: Optional[Union[str, List[str]]] = Field(None, alias='bto')
-    cc: Optional[Union[str, List[str]]] = Field(None, alias='cc')
-    bcc: Optional[Union[str, List[str]]] = Field(None, alias='bcc')
+    url: Optional[Union[HttpUrl, 'BaseLink',
+                        List[Union[HttpUrl, 'BaseLink']]]] = Field(None, alias='url')
+    to: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                       List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='to')
+    bto: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                        List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='bto')
+    cc: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                       List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='cc')
+    bcc: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                        List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='bcc')
     media_type: Optional[str] = Field(None, alias='mediaType')
     duration: Optional[str] = Field(None, alias='duration')
+
+    @field_validator('media_type')
+    def check_media_type(cls, value):
+        mimetypes.add_type(
+            'application/ld+json; profile="https://www.w3.org/ns/activitystreams"', '.json')
+        mimetypes.add_type('application/activity+json', '.json')
+        extension = mimetypes.guess_extension(value)
+        if not extension:
+            raise ValueError(f"Invalid MIME type: {value}")
+        return value
+
+    @field_validator('duration')
+    def validate_duration(cls, v):
+        try:
+            parsed_duration = isodate.parse_duration(v)
+            return v
+        except (isodate.ISO8601Error, ValueError):
+            raise ValueError(f"Invalid XSD duration format: {v}")
+
+    @field_validator('content_map')
+    def validate_language_codes(cls, v):
+        if v is not None:
+            for lang in v.keys():
+                try:
+                    Locale.parse(lang, sep='-')
+                except UnknownLocaleError:
+                    raise ValueError(
+                        f"Invalid ISO language code in contentMap: {lang}")
+        return v
+
+    @field_validator('name_map')
+    def validate_language_codes(cls, v):
+        if v is not None:
+            for lang in v.keys():
+                try:
+                    Locale.parse(lang, sep='-')
+                except UnknownLocaleError:
+                    raise ValueError(
+                        f"Invalid ISO language code in nameMap: {lang}")
+        return v
+
+    @field_validator('summary_map')
+    def validate_language_codes(cls, v):
+        if v is not None:
+            for lang in v.keys():
+                try:
+                    Locale.parse(lang, sep='-')
+                except UnknownLocaleError:
+                    raise ValueError(
+                        f"Invalid ISO language code in summaryMap: {lang}")
+        return v
 
 
 class BaseLink(ActivityStreamsBase):
@@ -76,10 +144,39 @@ class BaseLink(ActivityStreamsBase):
     rel: Optional[str] = Field(None, alias='rel')
     media_type: Optional[str] = Field(None, alias='mediaType')
     name: Optional[str] = Field(None, alias='name')
+    name_map: Optional[Dict[str, str]] = Field(None, alias='nameMap')
     hreflang: Optional[str] = Field(None, alias='hreflang')
-    height: Optional[int] = Field(None, alias='height')
-    width: Optional[int] = Field(None, alias='width')
-    preview: Optional[HttpUrl] = Field(None, alias='preview')
+    height: Optional[int] = Field(None, alias='height', ge=0)
+    width: Optional[int] = Field(None, alias='width', ge=0)
+    preview: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
+                            List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='preview')
+
+    @field_validator('name_map')
+    def validate_language_codes(cls, v):
+        if v is not None:
+            for lang in v.keys():
+                try:
+                    Locale.parse(lang, sep='-')
+                except UnknownLocaleError:
+                    raise ValueError(
+                        f"Invalid ISO language code in nameMap: {lang}")
+        return v
+
+    @field_validator('rel')
+    def check_link_relation(cls, v):
+        invalid_chars = " \t\n\f\r,"
+        if any(char in invalid_chars for char in v):
+            raise ValueError(
+                f"Link relation contains invalid characters. Valid characters should not include any of: {invalid_chars}")
+        return v
+
+    @field_validator('hreflang')
+    def validate_bcp47_language_tag(cls, v):
+        try:
+            if pycountry.languages.lookup(v):
+                return v
+        except LookupError:
+            raise ValueError(f"Invalid BCP47 language tag: {v}")
 
 
 class BaseActivity(BaseObject):
