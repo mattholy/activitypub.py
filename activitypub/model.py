@@ -4,7 +4,7 @@ from babel.core import Locale, UnknownLocaleError
 import pycountry
 
 from pydantic import BaseModel, Field, HttpUrl
-from pydantic import field_validator
+from pydantic import field_validator, ValidationInfo
 from datetime import datetime
 from typing import Optional, Union, List, Dict, Any, Literal
 
@@ -13,6 +13,16 @@ from typing import Optional, Union, List, Dict, Any, Literal
 mimetypes.add_type(
     'application/ld+json; profile="https://www.w3.org/ns/activitystreams"', '.json')
 mimetypes.add_type('application/activity+json', '.json')
+
+# Validators
+
+
+def validate_language_codes(code: str):
+    try:
+        if pycountry.languages.lookup(code):
+            return True
+    except LookupError:
+        return False
 
 
 class ActivityStreamsBase(BaseModel):
@@ -94,6 +104,7 @@ class BaseObject(ActivityStreamsBase):
     duration: Optional[str] = Field(None, alias='duration')
 
     @field_validator('media_type')
+    @classmethod
     def check_media_type(cls, value):
         extension = mimetypes.guess_extension(value)
         if not extension:
@@ -101,6 +112,7 @@ class BaseObject(ActivityStreamsBase):
         return value
 
     @field_validator('duration')
+    @classmethod
     def validate_duration(cls, v):
         try:
             parsed_duration = isodate.parse_duration(v)
@@ -108,37 +120,16 @@ class BaseObject(ActivityStreamsBase):
         except (isodate.ISO8601Error, ValueError):
             raise ValueError(f"Invalid XSD duration format: {v}")
 
-    @field_validator('content_map')
-    def validate_language_codes(cls, v):
-        if v is not None:
-            for lang in v.keys():
-                try:
-                    Locale.parse(lang, sep='-')
-                except UnknownLocaleError:
-                    raise ValueError(
-                        f"Invalid ISO language code in contentMap: {lang}")
-        return v
-
-    @field_validator('name_map')
-    def validate_language_codes(cls, v):
-        if v is not None:
-            for lang in v.keys():
-                try:
-                    Locale.parse(lang, sep='-')
-                except UnknownLocaleError:
-                    raise ValueError(
-                        f"Invalid ISO language code in nameMap: {lang}")
-        return v
-
-    @field_validator('summary_map')
-    def validate_language_codes(cls, v):
-        if v is not None:
-            for lang in v.keys():
-                try:
-                    Locale.parse(lang, sep='-')
-                except UnknownLocaleError:
-                    raise ValueError(
-                        f"Invalid ISO language code in summaryMap: {lang}")
+    @field_validator('content_map', 'name_map', 'summary_map')
+    @classmethod
+    def validate_lang_code(cls, v: str, info: ValidationInfo) -> str:
+        wrong_lang_code = []
+        for k in v.keys():
+            if not validate_language_codes(k):
+                wrong_lang_code.append(k)
+        if len(wrong_lang_code) > 0:
+            raise ValueError(
+                f"Invalid BCP47 language tag in {info.field_name}: {wrong_lang_code}")
         return v
 
 
@@ -154,15 +145,16 @@ class BaseLink(ActivityStreamsBase):
     preview: Optional[Union[HttpUrl, 'BaseObject', 'BaseLink',
                             List[Union[HttpUrl, 'BaseObject', 'BaseLink']]]] = Field(None, alias='preview')
 
-    @field_validator('name_map')
-    def validate_language_codes(cls, v):
-        if v is not None:
-            for lang in v.keys():
-                try:
-                    Locale.parse(lang, sep='-')
-                except UnknownLocaleError:
-                    raise ValueError(
-                        f"Invalid ISO language code in nameMap: {lang}")
+    @field_validator('hreflang', 'name_map')
+    @classmethod
+    def validate_lang_code(cls, v: str, info: ValidationInfo) -> str:
+        wrong_lang_code = []
+        for k in v.keys():
+            if not validate_language_codes(k):
+                wrong_lang_code.append(k)
+        if len(wrong_lang_code) > 0:
+            raise ValueError(
+                f"Invalid BCP47 language tag in {info.field_name}: {wrong_lang_code}")
         return v
 
     @field_validator('rel')
@@ -172,14 +164,6 @@ class BaseLink(ActivityStreamsBase):
             raise ValueError(
                 f"Link relation contains invalid characters. Valid characters should not include any of: {invalid_chars}")
         return v
-
-    @field_validator('hreflang')
-    def validate_bcp47_language_tag(cls, v):
-        try:
-            if pycountry.languages.lookup(v):
-                return v
-        except LookupError:
-            raise ValueError(f"Invalid BCP47 language tag: {v}")
 
 
 class BaseActivity(BaseObject):
